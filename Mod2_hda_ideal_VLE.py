@@ -89,10 +89,10 @@ class HDAParameterData(PhysicalParameterBlock):
 
         # Source: The Properties of Gases and Liquids (1987)
         # 4th edition, Chemical Engineering Series - Robert C. Reid
-        pressure_crit_data = {'benzene': 48.9e5,
+        press4ure_crit_data = {'benzene': 48.9e5,
                               'toluene': 41e5,
                               'hydrogen': 12.9e5,
-                              'methane': 46e5,
+                              'methane': 6e5,
                               'diphenyl': 38.5e5
                               }
 
