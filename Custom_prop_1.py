@@ -43,10 +43,10 @@ class NaClParameterData(PhysicalParameterBlock):
 
         self.component_list = Set(initialize=['H2O','NaCl'])
 
-        # self.phase_list = Set(initialize=['Liq'],ordered=True)
+        self.phase_list = Set(initialize=['Liq'],ordered=True)
 
         # List of components in each phase (optional)
-        # self.phase_comp = {"Liq": self.component_list}
+        self.phase_comp = {"Liq": self.component_list}
 
         # Source: google
         mw_comp_data = {'H2O': 18.0E-3,'NaCl': 58.4E-3}
@@ -64,7 +64,11 @@ class NaClParameterData(PhysicalParameterBlock):
              'flow_mass_comp': {'method': None, 'units': 'g/s'},
              'mass_frac': {'method': None, 'units': 'none'},
              'temperature': {'method': None, 'units': 'K'},
-             'pressure': {'method': None, 'units': 'Pa'}})
+             'pressure': {'method': None, 'units': 'Pa'},
+             'dens_mass': {'method': '_dens_mass', 'units': 'g/m3'},
+             'dens_mass_comp': {'method': '_dens_mass_comp', 'units': 'g/m3'},
+             'pressure_osm': {'method': '_pressure_osm', 'units': 'Pa'}
+             })
 
         obj.add_default_units({'time': 's',
                                'length': 'm',
@@ -166,46 +170,72 @@ class IdealStateBlockData(StateBlockData):
         super(IdealStateBlockData, self).build()
 
         # Add state variables
-        # obj.add_properties(
-        #     {'flow_mass': {'method': None, 'units': 'g/s'},
-        #      'flow_mass_comp': {'method': None, 'units': 'g/s'},
-        #      'mass_frac': {'method': None, 'units': 'none'},
-        #      'temperature': {'method': None, 'units': 'K'},
-        #      'pressure': {'method': None, 'units': 'Pa'}})
-
         self.flow_mass = Var(
             initialize=0.5,
             bounds=(1e-8, 100),
-            doc='mass flow rates [g/s]')
+            doc='mass flow rate [g/s]')
 
-        self.flow_mass_comp = Var(self._params.component_list,
-                                  initialize=0.5,
-                                  bounds=(1e-8, 100),
-                                  doc='mass flow rates [g/s]')
+        self.mass_frac_comp = Var(
+            self._params.component_list,
+            initialize=0.1,
+            bounds=(1e-8, 1),
+            doc='mass fraction [unitless]')
 
-        self.pressure = Var(initialize=101325,
-                            bounds=(101325, 400000),
-                            domain=NonNegativeReals,
-                            doc='State pressure [Pa]')
 
-        self.temperature = Var(initialize=298.15,
-                               bounds=(298.15, 1000),
-                               domain=NonNegativeReals,
-                               doc='State temperature [K]')
+        self.pressure = Var(
+            initialize=101325,
+            bounds=(101325, 400000),
+            domain=NonNegativeReals,
+            doc='State pressure [Pa]')
+
+        self.temperature = Var(
+            initialize=298.15,
+            bounds=(298.15, 1000),
+            domain=NonNegativeReals,
+            doc='State temperature [K]')
 
         # Add supporting variables
-        def mass_frac(b):
-            return sum(b.flow_mass_comp[j]
-                       for j in b._params.component_list)
-        self.mass_frac = Expression(rule=mass_frac,
-                                    doc='mass fraction [unitless]')
+        def flow_mass_comp(b,j):
+            return b.flow_mass * b.mass_frac_comp[j]
+        self.flow_mass_comp = Expression(self._params.component_list,
+                                         rule=flow_mass_comp,
+                                         doc='mass fraction [unitless]')
 
 # -----------------------------------------------------------------------------
 # Property Methods
-#     def _dens_mol_phase(self):
-#         self.dens_mol_phase = Var(self._params.phase_list,
-#                                   initialize=1.0,
-#                                   doc="Molar density [mol/m^3]")
+    def _dens_mass(self):
+        self.dens_mass = Var(
+            initialize=1e6,
+            bounds=(1, 1e7),
+            doc="Mass density [g/m^3]")
+        self.eq_dens_mass = Constraint(expr=
+                                       self.dens_mass == 1000 *
+                                       (995 + 756 * self.mass_frac_comp['NaCl']))
+
+    def _dens_mass_comp(self):
+        self.dens_mass_comp = Var(
+                        self._params.component_list,
+                        initialize=1e5,
+                        bounds=(1, 1e8),
+                        doc="Mass dens_mass_compentration [g/m^3]")
+
+        def rule_dens_mass_comp(b, j):
+            return b.dens_mass_comp[j] == b.dens_mass * b.mass_frac_comp[j]
+        self.eq_dens_mass_comp = Constraint(self._params.component_list,
+                                            rule=rule_dens_mass_comp)
+
+    def _pressure_osm(self):
+        self.pressure_osm = Var(
+            initialize=1e6,
+            bounds=(1, 1e8),
+            doc="Osmotic pressure [Pa]")
+
+        def rule_pressure_osm(b):
+            c = b.dens_mass_comp['NaCl'] / 1000
+            return b.pressure_osm == \
+                   0.848 * (3.14e-6 * c ** 2 + 2.13e-4 * c + 0.917) * c * 1e5
+        self.eq_pressure_osm = Constraint(rule=rule_pressure_osm)
+
 # -----------------------------------------------------------------------------
 # General Methods
 #     def get_material_flow_terms(self, p, j):
