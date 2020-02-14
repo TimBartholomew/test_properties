@@ -181,6 +181,11 @@ class IdealStateBlockData(StateBlockData):
             bounds=(1e-8, 1),
             doc='mass fraction [unitless]')
 
+        self.eq_mass_frac_balance = \
+            Constraint(expr=
+                       1 - sum(self.mass_frac_comp[j] for
+                               j in self._params.component_list)
+                       == 0)
 
         self.pressure = Var(
             initialize=101325,
@@ -195,11 +200,13 @@ class IdealStateBlockData(StateBlockData):
             doc='State temperature [K]')
 
         # Add supporting variables
-        def flow_mass_comp(b,j):
-            return b.flow_mass * b.mass_frac_comp[j]
-        self.flow_mass_comp = Expression(self._params.component_list,
-                                         rule=flow_mass_comp,
-                                         doc='mass fraction [unitless]')
+        # def flow_mass_comp(b,j):
+        #     return b.flow_mass * b.mass_frac_comp[j]
+        # self.flow_mass_comp = Expression(self._params.component_list,
+        #                                  rule=flow_mass_comp,
+        #                                  doc='mass fraction [unitless]')
+
+        #
 
 # -----------------------------------------------------------------------------
 # Property Methods
@@ -238,9 +245,40 @@ class IdealStateBlockData(StateBlockData):
 
 # -----------------------------------------------------------------------------
 # General Methods
-#     def get_material_flow_terms(self, p, j):
-#         """Create material flow terms for control volume."""
-#         if j in self._params.component_list:
-#             return self.flow_mol_phase_comp[p, j]
-#         else:
-#             return 0
+    def get_material_flow_terms(self, p, j):
+        """Create material flow terms for control volume."""
+        return self.flow_mass * self.mass_frac_comp[j]
+
+    def get_enthalpy_flow_terms(self, p):
+        """Create enthalpy flow terms."""
+        # return self.flow_mol_phase[p] * self.enth_mol_phase[p]
+        pass
+
+    def get_material_density_terms(self, p, j):
+        """Create material density terms."""
+        # if j in self._params.component_list:
+        #     return self.dens_mol_phase[p] * self.mole_frac_phase_comp[p, j]
+        # else:
+        #     return 0
+        pass
+
+    def get_enthalpy_density_terms(self, p):
+        """Create enthalpy density terms."""
+        # return self.dens_mol_phase[p] * self.energy_internal_mol_phase[p]
+        pass
+
+    def default_material_balance_type(self):
+        return MaterialBalanceType.componentPhase
+
+    def default_energy_balance_type(self):
+        return EnergyBalanceType.enthalpyTotal
+
+    def get_material_flow_basis(b):
+        return MaterialFlowBasis.mass
+
+    def define_state_vars(self):
+        """Define state vars."""
+        return {"flow_mass": self.flow_mass,
+                "mass_frac_comp": self.mass_frac_comp,
+                "temperature": self.temperature,
+                "pressure": self.pressure}
