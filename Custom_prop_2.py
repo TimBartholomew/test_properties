@@ -64,18 +64,34 @@ class NaClParameterData(PhysicalParameterBlock):
              'mass_frac': {'method': None, 'units': 'none'},
              'temperature': {'method': None, 'units': 'K'},
              'pressure': {'method': None, 'units': 'Pa'},
-             'dens_mass': {'method': '_dens_mass', 'units': 'g/m3'},
-             'dens_mass_comp': {'method': '_dens_mass_comp', 'units': 'g/m3'},
-             'pressure_osm': {'method': '_pressure_osm', 'units': 'Pa'}
+             'dens_mass': {'method': '_dens_mass', 'units': 'kg/m3'},
+             'viscosity': {'method': '_viscosity', 'units': 'Pa-s'},
+             'dens_mass_comp': {'method': '_dens_mass_comp', 'units': 'kg/m3'},
+             'osm_coeff': {'method': '_osm_coeff', 'units': 'none'},
+             'pressure_osm': {'method': '_pressure_osm', 'units': 'Pa'},
+             'enth_mass_liq': {'method': '_enth_mass_liq', 'units': 'J/kg'}
              })
 
         obj.add_default_units({'time': 's',
                                'length': 'm',
-                               'mass': 'g',
+                               'mass': 'kg',
                                'amount': 'mol',
                                'temperature': 'K',
                                'energy': 'J',
                                'holdup': 'g'})
+    # parameters
+    R = 8.314  # gas constant [J/mol-K]
+    MW = 58.44  # molecular weight [g/mol]
+    osm_coeff_data = {'a1': 8.9453e-1,
+                      'a2': 4.1561e-4,
+                      'a3': -4.6262e-6,
+                      'a4': 2.2211e-11,
+                      'a5': -1.1445e-1,
+                      'a6': -1.4783e-3,
+                      'a7': -1.3526e-8,
+                      'a8': 7.0132,
+                      'a9': 5.696e-2,
+                      'a10': -2.8624e-4}
 
 
 class _IdealStateBlock(StateBlock):
@@ -256,22 +272,87 @@ class IdealStateBlockData(StateBlockData):
 # Property Methods
     def _dens_mass(self):
         self.dens_mass = Var(
-            initialize=1e6,
-            bounds=(1, 1e7),
-            doc="Mass density [g/m^3]")
-        self.eq_dens_mass = Constraint(
-            expr=self.dens_mass == 1000 *
-                 (995 + 756 * self.mass_frac))
+            initialize=1e3,
+            bounds=(1e-6, 1e6),
+            doc="Mass density [kg/m3]")
+
+        def rule_dens_mass(b):  # density [kg/m3]
+            t = b.temperature - 273.15
+            S = b.mass_frac * 1000
+            A = (2 * t - 200) / 160
+            B = (2 * S - 150) / 150
+            F1 = 0.5
+            F2 = A
+            F3 = 2 * A ** 2 - 1
+            F4 = 4 * A ** 3 - 3 * A
+            G1 = 0.5
+            G2 = B
+            G3 = 2 * B ** 2 - 1
+            A1 = 4.032 * G1 + 0.115 * G2 + 3.26E-4 * G3
+            A2 = -0.108 * G1 + 1.571e-3 * G2 - 4.23e-4 * G3
+            A3 = -0.012 * G1 + 1.74e-3 * G2 - 9e-6 * G3
+            A4 = 6.92e-4 * G1 - 8.7e-5 * G2 - 5.3e-5 * G3
+            return b.dens_mass == \
+                   1e3 * (A1 * F1 + A2 * F2 + A3 * F3 + A4 * F4)
+
+        self.eq_dens_mass = Constraint(rule=rule_dens_mass)
+
+    def _viscosity(self):
+        self.viscosity = Var(
+            initialize=1e-3,
+            bounds=(1e-8, 1),
+            doc="Viscosity [Pa-s]")
+
+        def rule_viscosity(b):  # dynamic viscosity [Pa-s]
+            t = b.temperature - 273.15
+            s = b.mass_frac
+            mu_w = 4.2844e-5 + (0.157 * (t + 64.993) ** 2 - 91.296) ** -1
+            A = 1.541 + 1.998e-2 * t - 9.52e-5 * t ** 2
+            B = 7.974 - 7.561e-2 * t + 4.724e-4 * t ** 2
+            return b.viscosity == mu_w * (1 + A * s + B * s ** 2)
+        self.eq_viscosity = Constraint(rule=rule_viscosity)
+
+    # TODO: scale diffusivity
+    # def _diffusivity(self):
+    #     self.diffusivist = Var(
+    #         initialize=1e6,
+    #         bounds=(1e-8, 1e2),
+    #         doc="Diffiusivity [m2/s]")
+    #
+    #     def rule_diffusivity(b):  # diffusivity [m2/s]
+    #         A = 3.847e-4
+    #         B = -0.1984
+    #         C = 26.54
+    #         return 1e-9 * (A * b.temperature ** 2 + B * b.temperature + C)
+    #
+    #     self.eq_diffusivity = Constraint(rule=rule_diffusivity)
 
     def _dens_mass_comp(self):
         self.dens_mass_comp = Var(
-                        initialize=1e5,
-                        bounds=(1, 1e8),
-                        doc="Mass dens_mass_compentration [g/m^3]")
+                        initialize=1e2,
+                        bounds=(1e-6, 1e6),
+                        doc="Mass concentration [kg/m3]")
 
         self.eq_dens_mass_comp = Constraint(
             expr=self.dens_mass_comp == self.dens_mass * self.mass_frac)
 
+    def _osm_coeff(self):
+        self.osm_coeff = Var(
+            initialize=1,
+            bounds=(1e-8, 10),
+            doc="Osmotic coefficient [unitless]")
+
+        def rule_osm_coeff(b):  # osmotic coefficient [-], eq. 49
+            s = b.mass_frac  # typo in Sharqawy, s is just mass_frac
+            t = b.temperature - 273.15
+            d = NaClParameterData.osm_coeff_data
+            osm_coeff = (d['a1'] + d['a2'] * t + d['a3'] * t ** 2
+                         + d['a4'] * t ** 4 + d['a5'] * s + d['a6'] * s * t
+                         + d['a7'] * s * t ** 3 + d['a8'] * s ** 2
+                         + d['a9'] * s ** 2 * t
+                         + d['a10'] * s ** 2 * t ** 2)
+            return b.osm_coeff == osm_coeff
+        self.eq_osm_coeff = Constraint(rule=rule_osm_coeff)
 
     def _pressure_osm(self):
         self.pressure_osm = Var(
@@ -279,11 +360,32 @@ class IdealStateBlockData(StateBlockData):
             bounds=(1, 1e8),
             doc="Osmotic pressure [Pa]")
 
-        def rule_pressure_osm(b):
-            c = b.dens_mass_comp / 1000
+        def rule_pressure_osm(b):  # osmotic pressure [Pa]
+            i = 2  # number of ionic species
+            R = NaClParameterData.R
+            MW = NaClParameterData.MW
             return b.pressure_osm == \
-                   0.848 * (3.14e-6 * c ** 2 + 2.13e-4 * c + 0.917) * c * 1e5
+                   (i * b.osm_coeff * b.dens_mass_comp * 1000 / MW
+                    * R * b.temperature)
         self.eq_pressure_osm = Constraint(rule=rule_pressure_osm)
+
+    # TODO: add vapor pressure, specific heat, thermal conductivitiy,
+    #   and heat of vaporization
+
+    def _enth_mass_liq(self):
+        self.enth_mass_liq = Var(
+            initialize=1e6,
+            bounds=(1, 1e9),
+            doc="Specific enthalpy [J/kg]")
+
+        def rule_enth_mass_liq(b):  # specific enthalpy [J/kg]
+            t = b.temperature - 273.15
+            S = b.mass_frac
+            h_w = 124.790 + 4203.075 * t - 0.552 * t ** 2 + 0.004 * t ** 3
+            h_sw = (h_w - (S * (27062.623 + S) + S * (4835.675 + S) * t))
+            return b.enth_mass_liq == h_sw
+        self.eq_enth_mass_liq = Constraint(rule=rule_enth_mass_liq)
+
 
 # -----------------------------------------------------------------------------
 # General Methods
@@ -299,8 +401,7 @@ class IdealStateBlockData(StateBlockData):
 
     def get_enthalpy_flow_terms(self, p):
         """Create enthalpy flow terms."""
-        # return self.flow_mol_phase[p] * self.enth_mol_phase[p]
-        pass
+        return self.flow_mass * self.enth_mass_liq
 
     def get_material_density_terms(self, p, j):
         """Create material density terms."""

@@ -1,4 +1,5 @@
-from pyomo.environ import ConcreteModel, SolverFactory, TerminationCondition, value
+from pyomo.environ import ConcreteModel, SolverFactory, TerminationCondition, \
+    value, Expression, Var
 from idaes.core import (FlowsheetBlock)
 import Custom_prop_2 as props
 # import Mod2_hda_ideal_VLE as props
@@ -12,27 +13,31 @@ m.fs.properties = props.NaClParameterBlock()
 # m.fs.properties = props.HDAParameterBlock()
 m.fs.Mixer = Mixer(default={"property_package": m.fs.properties,
                             "inlet_list": ["feed_1", "feed_2"],
-                            "energy_mixing_type": MixingType.none,
+                            "energy_mixing_type": MixingType.extensive,
                             "momentum_mixing_type": MomentumMixingType.none})
 
 
 m.fs.Mixer.feed_1.flow_mass[0].fix(0.5)
 m.fs.Mixer.feed_1.mass_frac[0].fix(0.035)
+m.fs.Mixer.feed_1.temperature[0].fix(273.15 + 50)
 m.fs.Mixer.feed_2.flow_mass[0].fix(0.5)
-m.fs.Mixer.feed_2.mass_frac[0].fix(0.1)
-m.fs.Mixer.mixed_state[0].dens_mass
-m.fs.Mixer.mixed_state[0].dens_mass_comp
-m.fs.Mixer.mixed_state[0].pressure_osm
-m.fs.Mixer.initialize()
-
-# m.display()
+m.fs.Mixer.feed_2.mass_frac[0].fix(0.035)
+m.fs.Mixer.feed_2.temperature[0].fix(273.15 + 25)
+# m.fs.Mixer.mixed_state[0].dens_mass
+# m.fs.Mixer.mixed_state[0].viscosity
+# m.fs.Mixer.mixed_state[0].dens_mass_comp
+# m.fs.Mixer.mixed_state[0].pressure_osm
+# m.fs.Mixer.mixed_state[0].osm_coeff
+# m.fs.Mixer.mixed_state[0].enth_mass_liq
+m.fs.Mixer.initialize(outlvl=0)
+print("Degrees of Freedom =", degrees_of_freedom(m))
 
 solver = SolverFactory('ipopt')
 solver.options = {'tol': 1e-6, 'max_iter': 5000}
 results = solver.solve(m, tee=False)
 assert results.solver.termination_condition == TerminationCondition.optimal
-m.display()
-
-print("Degrees of Freedom =", degrees_of_freedom(m))
 # m.display()
-# m.fs.Mixer.report()
+#
+print("Degrees of Freedom =", degrees_of_freedom(m))
+m.fs.Mixer.display()
+# m.fs.Mixer.pprint()
