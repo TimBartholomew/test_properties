@@ -162,7 +162,7 @@ class Prop:
         i = 2  # number of ionic species
         R = 8.314  # gas constant [J/mol-K]
         MW = 58.44  # molecular weight [g/mol]
-        return (i * self.osm_coeff * self.dens_mass_comp / MW
+        return (i * self.osm_coeff * self.dens_mass_comp * 1000 / MW
                 * R * self.temperature)
 
     def _pressure_vap(self):  # vapor pressure [Pa], Eq. 29 and 53
@@ -282,7 +282,7 @@ prop1.show()
 # visualize_properties()
 
 # plotting
-var_lst = ['enth_mass_liq']
+var_lst = ['osm_coeff','pressure_osm']
 # salinity x axis
 visualize_properties(var_lst=var_lst)
 # temperature x axis
